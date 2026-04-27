@@ -67,7 +67,7 @@ python3 -m pip install -e ".[dev]"
 ## Обучение с нуля
 
 ```bash
-PYTHONPATH=src python3 scripts/train.py \
+python3 scripts/train.py \
   --data-dir /kaggle/input/datasets/gowrishankarp/newspaper-text-summarization-cnn-dailymail \
   --epochs 100 \
   --batch-size 32 \
@@ -77,7 +77,7 @@ PYTHONPATH=src python3 scripts/train.py \
 Если будет `CUDA out of memory`, начните с:
 
 ```bash
-PYTHONPATH=src python3 scripts/train.py \
+python3 scripts/train.py \
   --batch-size 16 \
   --gradient-accumulation-steps 2
 ```
@@ -85,7 +85,7 @@ PYTHONPATH=src python3 scripts/train.py \
 ## Продолжить обучение с checkpoint
 
 ```bash
-PYTHONPATH=src python3 scripts/fine_tune.py \
+python3 scripts/fine_tune.py \
   --checkpoint checkpoints/transformer_summarizer_checkpoint/summarizer_checkpoint.pt \
   --epochs 5 \
   --batch-size 8
@@ -96,7 +96,7 @@ PYTHONPATH=src python3 scripts/fine_tune.py \
 По тексту:
 
 ```bash
-PYTHONPATH=src python3 scripts/infer.py \
+python3 scripts/infer.py \
   --checkpoint checkpoints/transformer_summarizer_checkpoint/summarizer_checkpoint.pt \
   --text "Your article text here"
 ```
@@ -104,7 +104,7 @@ PYTHONPATH=src python3 scripts/infer.py \
 По validation examples:
 
 ```bash
-PYTHONPATH=src python3 scripts/infer.py \
+python3 scripts/infer.py \
   --checkpoint checkpoints/transformer_summarizer_checkpoint/summarizer_checkpoint.pt \
   --num-samples 5
 ```
@@ -112,7 +112,7 @@ PYTHONPATH=src python3 scripts/infer.py \
 ## Графики
 
 ```bash
-PYTHONPATH=src python3 scripts/plot_history.py \
+python3 scripts/plot_history.py \
   --history /kaggle/working/summarizer/history.json \
   --output /kaggle/working/summarizer/history.png \
   --no-show
