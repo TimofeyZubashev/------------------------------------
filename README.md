@@ -1,67 +1,129 @@
 # Трансформер для саммаризации текстов
 
-Репозиторий для пошаговой реализации нейросетевого суммаризатора текста на базе Transformer encoder-decoder архитектуры.
+Python-проект для обучения и инференса собственного text summarizer на базе Transformer encoder-decoder архитектуры.
 
-На текущем этапе реализованы:
+Проект переписан из финального Kaggle/Jupyter notebook `sum-sum (2).ipynb` в модульную структуру. Notebook оставлен как исходный экспериментальный артефакт, а основной код теперь находится в `src/` и `scripts/`.
 
-- токенные и позиционные эмбеддинги;
-- encoder-decoder Transformer;
-- causal mask для авторегрессионного декодера;
-- loss для teacher forcing;
-- greedy generation для быстрой проверки инференса;
-- training loop, готовый принять будущие DataLoader-ы;
-- логирование метрик и построение графиков обучения.
+## Что внутри
 
-В модульном коде `src/` и `scripts/train.py` DataLoader-ы пока оставлены точкой подключения для следующего шага. В Kaggle notebook уже добавлена учебная реализация:
-
-- Train / Test Datasets;
-- Train / Test DataLoaders.
+- CNN/DailyMail loader для датасета `gowrishankarp/newspaper-text-summarization-cnn-dailymail`;
+- простой word-level tokenizer;
+- Train / Validation / Test Dataset и DataLoader;
+- Transformer encoder;
+- Transformer decoder summarizer;
+- обучение с AMP и `DataParallel`;
+- продолжение обучения с checkpoint;
+- inference по произвольному тексту или validation samples;
+- построение графиков loss/perplexity.
 
 ## Структура
 
 ```text
-scripts/
-  train.py
-  plot_training_metrics.py
-notebooks/
-  kaggle_text_summarizer_pipeline.ipynb
 src/text_summarizer/
-  __init__.py
-  encoder.py
-  model.py
-  transformer.py
-tests/
-  test_transformer.py
+  config.py        # конфиги датасета, обучения и fine-tuning
+  tokenizer.py     # SimpleTokenizer
+  data.py          # Dataset/DataLoader и загрузка CNN/DailyMail
+  encoder.py       # Transformer encoder
+  model.py         # Transformer summarizer + checkpoint loading
+  training.py      # train/evaluate loop, AMP, DataParallel helpers
+  inference.py     # загрузка модели и генерация summary
+  plotting.py      # графики и статистики
+
+scripts/
+  train.py         # обучение с нуля
+  fine_tune.py     # продолжение обучения с checkpoint
+  infer.py         # инференс
+  plot_history.py  # график по history.json
+
+checkpoints/
+  transformer_summarizer_checkpoint/
+    summarizer_checkpoint.pt
 ```
 
-## Основные файлы
+## Важная правка после Kaggle ошибки
 
-- `scripts/train.py` - скрипт тренировки. Сейчас содержит training loop, optimizer, evaluation, checkpoint saving и явную точку подключения будущих DataLoader-ов.
-- `src/text_summarizer/model.py` - seq2seq Transformer-суммаризатор: decoder, loss, checkpoint API и inference через `generate` / `summarize_token_ids`.
-- `scripts/plot_training_metrics.py` - проверка процесса обучения по `metrics.jsonl`: строит графики loss, perplexity и learning rate.
-- `src/text_summarizer/encoder.py` - encoder модели: token embeddings, positional encoding и Transformer encoder.
-- `notebooks/kaggle_text_summarizer_pipeline.ipynb` - self-contained Kaggle notebook с Dataset, DataLoader, моделью, тренировкой, графиками, AMP, DataParallel для двух GPU и тестовым inference. Настроен на CNN/DailyMail: `/kaggle/input/datasets/gowrishankarp/newspaper-text-summarization-cnn-dailymail`, файлы `train.csv`, `validation.csv`, `test.csv`, колонки `article` и `highlights`.
+Ошибка:
 
-## Быстрая проверка
+```text
+RuntimeError: grad can be implicitly created only for scalar outputs
+```
+
+возникала из-за `nn.DataParallel`: когда модель возвращает scalar loss с каждой GPU, PyTorch собирает их в вектор. Поэтому в `src/text_summarizer/training.py` loss всегда приводится к скаляру через:
+
+```python
+loss = output.loss.mean()
+```
+
+Это исправляет `backward()` на двух T4.
+
+## Установка
 
 ```bash
 python3 -m pip install -e ".[dev]"
-python3 -m pytest
 ```
 
-## Dry run тренировки
+На Kaggle зависимости `torch`, `pandas` и `matplotlib` обычно уже доступны.
 
-Проверка training step на синтетическом батче, без Dataset/DataLoader:
+## Обучение с нуля
 
 ```bash
-python3 scripts/train.py --dry-run --d-model 64 --num-heads 4 --dim-feedforward 128 --num-encoder-layers 2 --num-decoder-layers 2
+PYTHONPATH=src python3 scripts/train.py \
+  --data-dir /kaggle/input/datasets/gowrishankarp/newspaper-text-summarization-cnn-dailymail \
+  --epochs 100 \
+  --batch-size 32 \
+  --gradient-accumulation-steps 1
 ```
 
-## Графики обучения
-
-После появления `runs/baseline/metrics.jsonl`:
+Если будет `CUDA out of memory`, начните с:
 
 ```bash
-python3 -m pip install -e ".[viz]"
-python3 scripts/plot_training_metrics.py
+PYTHONPATH=src python3 scripts/train.py \
+  --batch-size 16 \
+  --gradient-accumulation-steps 2
 ```
+
+## Продолжить обучение с checkpoint
+
+```bash
+PYTHONPATH=src python3 scripts/fine_tune.py \
+  --checkpoint checkpoints/transformer_summarizer_checkpoint/summarizer_checkpoint.pt \
+  --epochs 5 \
+  --batch-size 8
+```
+
+## Инференс
+
+По тексту:
+
+```bash
+PYTHONPATH=src python3 scripts/infer.py \
+  --checkpoint checkpoints/transformer_summarizer_checkpoint/summarizer_checkpoint.pt \
+  --text "Your article text here"
+```
+
+По validation examples:
+
+```bash
+PYTHONPATH=src python3 scripts/infer.py \
+  --checkpoint checkpoints/transformer_summarizer_checkpoint/summarizer_checkpoint.pt \
+  --num-samples 5
+```
+
+## Графики
+
+```bash
+PYTHONPATH=src python3 scripts/plot_history.py \
+  --history /kaggle/working/summarizer/history.json \
+  --output /kaggle/working/summarizer/history.png \
+  --no-show
+```
+
+## Kaggle GPU
+
+Для двух T4 используется `nn.DataParallel`. Это делит batch между GPU, но не объединяет память двух карт в одну. Если не хватает памяти, уменьшайте:
+
+1. `batch_size`;
+2. `max_source_length`;
+3. `max_target_length`;
+4. `d_model` или количество слоев.
+
